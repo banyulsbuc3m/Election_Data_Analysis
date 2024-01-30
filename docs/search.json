@@ -1,0 +1,184 @@
+[
+  {
+    "objectID": "index.html#tidy-data-elections",
+    "href": "index.html#tidy-data-elections",
+    "title": "Election Data",
+    "section": "TIDY DATA ELECTIONS!",
+    "text": "TIDY DATA ELECTIONS!\nFirst step is to convert election_data into:\nelection_data_tidy!\nFor that matter we will use:\n\n\npivot_longer,\nmutate,\nglue,\ncase_when,\namong others!"
+  },
+  {
+    "objectID": "index.html#code",
+    "href": "index.html#code",
+    "title": "Election Data",
+    "section": "Code:",
+    "text": "Code:\n\nelection_data_tidy &lt;- election_data %&gt;%\n  mutate(across(where(is.logical), as.numeric)) %&gt;%\n  pivot_longer(cols = \"BERDEAK-LOS VERDES\":\"COALICIÓN POR MELILLA\",  \n               names_to = \"Parties\",\n               values_to = \"Votes\") %&gt;%\n  drop_na() %&gt;%\n  unite(col = Fecha, anno, mes, sep = \"-\") %&gt;%\n  mutate(\n    codigo_municipio = glue(\"{codigo_ccaa}-{codigo_provincia}-{codigo_municipio}\"),\n    acronyms = case_when(\n      str_detect(Parties, \"PARTIDO.SOCIALISTA.OBRERO.ESPAÑOL|PARTIT.DELS.SOCIALISTES.DE.CATALUNYA|PARTIDO.SOCIALISTA.DE.EUSKADI|PARTIDO.DOS.SOCIALISTAS.DE.GALICIA\") ~ \"PSOE\",\n      str_detect(Parties, \"PARTIDO.POPULAR\") ~ \"PP\",\n      str_detect(Parties, \"PODEMOS|EN.COMÚ.PODEM|IZQUIERDA UNIDA|LOS VERDES|PODEM|EZKER BATUA\") ~ \"UP-IU\",\n      str_detect(Parties, \"VOX\") ~ \"VOX\",\n      str_detect(Parties, \"CIUDADANOS|CIUTADANS\") ~ \"CS\",\n      str_detect(Parties, \"ESQUERRA.REPUBLICANA.DE.CATALUNYA\") ~ \"ERC\",\n      str_detect(Parties, \"EUSKAL.HERRIA.BILDU|EUSKO ALKARTASUNA|ARALAR\") ~ \"BILDU\",\n      str_detect(Parties, \"PARTIDO.NACIONALISTA.VASCO\") ~ \"PNV\",\n      str_detect(Parties, \"BLOQUE NACIONALISTA GALLEGO\") ~ \"BNG\",\n      str_detect(Parties, \"COMPROMÍS\") ~ \"COMPROMIS\",\n      str_detect(Parties, \"CONVERGÈNCIA I UNIÓ|JUNTS PER CATALUNYA-JUNTS\") ~ \"CIU\",\n      str_detect(Parties, \"MÁS PAÍS\") ~ \"MP\",\n      TRUE ~ \"OTHERS\"\n    )\n  ) %&gt;%\nselect(-tipo_eleccion, -vuelta, -codigo_distrito_electoral, -codigo_ccaa, -codigo_provincia) %&gt;%\ngroup_by_at(vars(-Parties, -Votes)) %&gt;%  \n  summarise(votes = sum(Votes), .groups = 'drop') %&gt;%\n  ungroup() |&gt; \nmutate(turnout = ((votos_candidaturas + votos_nulos + votos_blancos) / censo) * 100)"
+  },
+  {
+    "objectID": "index.html#tidy-data-surveys",
+    "href": "index.html#tidy-data-surveys",
+    "title": "Election Data",
+    "section": "TIDY DATA SURVEYS!",
+    "text": "TIDY DATA SURVEYS!\nFirst step is to convert surveys into:\ntidy surveys!\nFor that matter we will use:\n\n\npivot_longer,\nlubridate\ndrop_na,\nfilter\namong others!"
+  },
+  {
+    "objectID": "index.html#code-1",
+    "href": "index.html#code-1",
+    "title": "Election Data",
+    "section": "Code:",
+    "text": "Code:\n\nsurveys &lt;- surveys |&gt; select(-type_survey) |&gt;   drop_na(date_elec)\n\nsurveys$Year &lt;- year(surveys$date_elec)\n\nsurveys &lt;- surveys |&gt;  filter(Year &gt;= 2008)\n\nsurveys &lt;- surveys |&gt;  filter(exit_poll == FALSE)\n\nsurveys &lt;- surveys |&gt; drop_na(size)\n\nsurveys$fieldwork_days &lt;- as.numeric(surveys$field_date_to - surveys$field_date_from)\n\nsurveys &lt;- surveys |&gt;  filter(fieldwork_days &gt;= 1)\n\nsurveys &lt;- surveys |&gt;  filter(size &gt;= 750)\n\nsurveys &lt;- surveys   |&gt;  \n  pivot_longer(cols = \"UCD\":\"EV\",  \n               names_to = \"Parties\",\n               values_to = \"Intentions\") \n\nsurveys &lt;- surveys |&gt;  drop_na(turnout)\n\nsurveys &lt;- surveys |&gt; drop_na(Intentions)"
+  },
+  {
+    "objectID": "index.html#visualizations",
+    "href": "index.html#visualizations",
+    "title": "Election Data",
+    "section": "Visualizations!",
+    "text": "Visualizations!\nAs we answer the questions through graphs in order to understand easier the results, we create a palette according to the acronym and the color that matches their logo as far as possible.\n\nacronyms &lt;- c(\"PSOE\", \"PP\", \"UP-IU\", \"OTHERS\", \n              \"ERC\", \"PNV\", \"BILDU\", \"CS\", \n              \"CIU\", \"VOX\", \"COMPROMIS\")\ncolors &lt;- c(\"#c81d11\", \"#3399FF\", \"#6D50B3\", \n            \"#808080\", \"#ebc049\", \"#C89289\", \n            \"#28c9bc\", \"#FF5824\", \"#020559\", \n            \"#73B446\", \"#FF5824\")\n\ncolor_mapping &lt;- setNames(colors, acronyms)\n\nAlso, all graphs will follow the stata theme of ggplot2 to ensure visual consistency."
+  },
+  {
+    "objectID": "index.html#question-1",
+    "href": "index.html#question-1",
+    "title": "Election Data",
+    "section": "Question 1:",
+    "text": "Question 1:\nHow is the vote of national parties (PSOE, PP, VOX, CS, MP, UP - IU) distributed against regional or nationalist parties?\n\nelection_data_tidy1 &lt;- election_data_tidy |&gt; \n  mutate(\n    acronyms1 = case_when(\n      str_detect(acronyms, \"PSOE|PP|VOX|CS|MP|UP-IU\") ~ \"National\",\n      TRUE ~ \"Regional/Nationalist\"\n    )\n  ) |&gt; select(-acronyms) |&gt; \n  group_by_at(vars(-votes)) |&gt; \n  summarise(votes = sum(votes), .groups = 'drop') |&gt; \n  ungroup()\n\n\nelection_data_tidy1 &lt;- election_data_tidy1 |&gt; \n  select(votes, acronyms1)"
+  },
+  {
+    "objectID": "index.html#graph-question-1",
+    "href": "index.html#graph-question-1",
+    "title": "Election Data",
+    "section": "Graph Question 1",
+    "text": "Graph Question 1"
+  },
+  {
+    "objectID": "index.html#question-2",
+    "href": "index.html#question-2",
+    "title": "Election Data",
+    "section": "Question 2:",
+    "text": "Question 2:\nWhich party was the winner in the municipalities with more than 100,000 inhabitants (census) in each of the elections?\n\nelection_data_tidy2 &lt;- election_data_tidy %&gt;%\n  filter(censo &gt; 100000) |&gt; \n  group_by_at(vars(-acronyms, -votes)) |&gt; \n   slice_max(votes, n=1, with_ties = FALSE) |&gt; \n  ungroup()"
+  },
+  {
+    "objectID": "index.html#graph-question-2",
+    "href": "index.html#graph-question-2",
+    "title": "Election Data",
+    "section": "Graph Question 2",
+    "text": "Graph Question 2"
+  },
+  {
+    "objectID": "index.html#question-3",
+    "href": "index.html#question-3",
+    "title": "Election Data",
+    "section": "Question 3:",
+    "text": "Question 3:\nWhich party was the second when the first was the PSOE? And when the first was the PP?\n\nwinner &lt;- election_data_tidy   |&gt; \n  group_by_at(vars(-acronyms, -votes)) |&gt; \n  slice_max(votes, n=1, with_ties = FALSE) |&gt; \n  ungroup() |&gt; rename(\"Winner\"=\"acronyms\",\"votes_winner\"=\"votes\")\n\nwinner &lt;- winner |&gt; \n  select(codigo_municipio, Fecha, Winner, votes_winner)\n\nlosers &lt;- election_data_tidy   |&gt; \n  group_by_at(vars(-acronyms, -votes)) |&gt; \n  slice_max(votes, n=2, with_ties = FALSE) |&gt; \n  slice_min(votes, n=1, with_ties = FALSE) |&gt; \n  ungroup() |&gt; rename(\"Losser\"=\"acronyms\",\"votes_loser\"=\"votes\")\n\nlosers &lt;- losers |&gt; \n  select(codigo_municipio, Fecha, Losser, votes_loser)\n\n\nwinnersandlosers &lt;-winner |&gt; left_join(losers,by=c(\"Fecha\",\"codigo_municipio\"))\n\nsecond_parties_when_psoe &lt;- winnersandlosers |&gt; filter(Winner==\"PSOE\")\n\nsecond_parties_when_pp &lt;- winnersandlosers |&gt; filter(Winner==\"PP\")"
+  },
+  {
+    "objectID": "index.html#function-to-plot-the-graphs",
+    "href": "index.html#function-to-plot-the-graphs",
+    "title": "Election Data",
+    "section": "Function to plot the graphs!",
+    "text": "Function to plot the graphs!\n\nplot_histogram &lt;- function(data, party_name) {\n  ggplot(data, aes(x = Losser, fill = Losser)) +\n    geom_bar(stat = \"count\") +\n  geom_text(stat = \"count\", aes(label = \n          ifelse(after_stat(count) &lt; 1000, \n                 after_stat(count), \"\")),\n            vjust = -0.5, size = 3) +\n  facet_wrap(~Fecha) +\n    labs(title = paste(\"Second winners when\", party_name, \"won\"),\n         x = \"Party\",\n         y = \"Nº of times won\") +\n    theme_stata()+theme(legend.position=\"none\") +\n  theme(legend.title=element_blank()) + \n  xlab(NULL) + \n  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +\n  scale_fill_manual(values = color_mapping) \n}"
+  },
+  {
+    "objectID": "index.html#question-3-graphs",
+    "href": "index.html#question-3-graphs",
+    "title": "Election Data",
+    "section": "Question 3 graphs:",
+    "text": "Question 3 graphs:\n\nPSOEPP"
+  },
+  {
+    "objectID": "index.html#question-4",
+    "href": "index.html#question-4",
+    "title": "Election Data",
+    "section": "Question 4:",
+    "text": "Question 4:\nWho benefits from low turnout?\n\n\n\nelection_data_tidy4 &lt;- election_data_tidy |&gt; \n  mutate( pcg_votes = (votes / \n                      (votos_candidaturas + \n                         votos_nulos + \n                         votos_blancos)) * 100)\n\nquestion4 &lt;- election_data_tidy4 |&gt; \n    group_by(acronyms)  |&gt; \n  summarize(mean_pcgvotes = mean(pcg_votes),\n            mean_turnout = mean(turnout))\n\nsorted_question4 &lt;- question4  |&gt; \n  arrange(mean_turnout)\n\nsorted_question4 \n\n# A tibble: 12 × 3\n   acronyms  mean_pcgvotes mean_turnout\n   &lt;chr&gt;             &lt;dbl&gt;        &lt;dbl&gt;\n 1 PNV               35.8          69.0\n 2 MP                 1.75         69.4\n 3 BILDU             21.9          69.9\n 4 ERC               23.2          72.8\n 5 CIU               28.8          74.3\n 6 VOX                9.48         74.9\n 7 CS                 8.65         75.0\n 8 OTHERS             8.87         75.0\n 9 PSOE              28.9          75.4\n10 PP                37.0          75.4\n11 UP-IU             10.3          75.5\n12 COMPROMIS          7.18         78.3\n\n\n\n\nmean_turnout &lt;- election_data_tidy |&gt;\n  group_by(Fecha, codigo_municipio) |&gt;\n  summarise(mean_turnout = mean(turnout)\n  , .groups = 'drop') \n\nmean_turnout\n\n# A tibble: 48,737 × 3\n   Fecha   codigo_municipio mean_turnout\n   &lt;chr&gt;   &lt;glue&gt;                  &lt;dbl&gt;\n 1 2008-03 01-04-001                80.3\n 2 2008-03 01-04-002                80.4\n 3 2008-03 01-04-003                74.0\n 4 2008-03 01-04-004                85.0\n 5 2008-03 01-04-005                84.5\n 6 2008-03 01-04-006                72.9\n 7 2008-03 01-04-007                76.6\n 8 2008-03 01-04-008                82.8\n 9 2008-03 01-04-009                74.1\n10 2008-03 01-04-010                85.6\n# ℹ 48,727 more rows"
+  },
+  {
+    "objectID": "index.html#graph-question-4",
+    "href": "index.html#graph-question-4",
+    "title": "Election Data",
+    "section": "Graph Question 4:",
+    "text": "Graph Question 4:"
+  },
+  {
+    "objectID": "index.html#question-5",
+    "href": "index.html#question-5",
+    "title": "Election Data",
+    "section": "Question 5:",
+    "text": "Question 5:\nHow to analyze the relationship between census and vote? Is it true that certain parties win in rural areas?\n\nruralquestion5 &lt;- election_data_tidy %&gt;%\n  mutate(zone_type = case_when(\n    censo &lt;= 5000 ~ \"Zona Rural de pequeño tamaño\",\n    censo &gt; 5000 & censo &lt;= 30000 ~ \"Zona Rural\",\n    censo &gt; 30000 & censo &lt;= 50000 ~ \"Pequeñas áreas urbanas\",\n    censo &gt; 50000 ~ \"Grandes Áreas Urbanas\"\n  ))\n\n\nruralquestion5part1 &lt;- ruralquestion5 |&gt; \n    group_by_at(vars(-acronyms, -votes)) |&gt; \n   slice_max(votes, n=1, with_ties = FALSE) |&gt; \n  ungroup()"
+  },
+  {
+    "objectID": "index.html#question-5-graphs",
+    "href": "index.html#question-5-graphs",
+    "title": "Election Data",
+    "section": "Question 5 graphs:",
+    "text": "Question 5 graphs:\n\nGAUZRZRPTPAU"
+  },
+  {
+    "objectID": "index.html#question-6",
+    "href": "index.html#question-6",
+    "title": "Election Data",
+    "section": "Question 6:",
+    "text": "Question 6:\nHow to calibrate the error of the polls (remember that the polls are voting intentions at national level)?\n\nsurveys &lt;- surveys %&gt;%\n  mutate(date_elec = format(ymd(date_elec), \"%Y-%m\"))\n\nsurvey_actual1 &lt;- election_data_tidy |&gt; \n  group_by(Fecha) %&gt;%  \n  summarise(total_votes = sum(votes), .groups = 'drop')\n\nsurvey_actual2 &lt;- election_data_tidy |&gt; \n  group_by(Fecha, acronyms) %&gt;%  \n  summarise(votes = sum(votes), .groups = 'drop')\n\nmerged_surveyactual &lt;- merge(survey_actual1, survey_actual2, \n                             by = \"Fecha\", all = TRUE)\n\nmerged_surveyactual &lt;- merged_surveyactual %&gt;%\n  mutate(pcg = round((votes/total_votes) * 100, 2))\n\nhead(merged_surveyactual)\n\n    Fecha total_votes acronyms    votes   pcg\n1 2008-03    25069038    BILDU    79837  0.32\n2 2008-03    25069038       CS    60231  0.24\n3 2008-03    25069038      ERC   289641  1.16\n4 2008-03    25069038   OTHERS  2303081  9.19\n5 2008-03    25069038      PNV   303264  1.21\n6 2008-03    25069038       PP 10171828 40.58"
+  },
+  {
+    "objectID": "index.html#question-6-1",
+    "href": "index.html#question-6-1",
+    "title": "Election Data",
+    "section": "Question 6:",
+    "text": "Question 6:\n\nmerged_surveyactualpcg &lt;- merged_surveyactual |&gt; \n  select(Fecha, acronyms, pcg) |&gt; \n  rename(Parties = acronyms)\n\nsurveys &lt;- surveys |&gt; \n  rename(Fecha = date_elec)\n\nmerged_df &lt;- merge(surveys, merged_surveyactualpcg, by = c('Fecha', 'Parties'))\n\nmerged_df &lt;- merged_df |&gt; \n  mutate(diff = pcg - Intentions,\n         abs_diff = abs(diff))\n\nmerged_dfactualpresentation &lt;- merged_df |&gt; \n  select(Fecha, Parties, id_pollster, Intentions, pcg, abs_diff)\n\nhead(merged_dfactualpresentation, 12)\n\n     Fecha Parties id_pollster Intentions  pcg abs_diff\n1  2008-03     ERC  pollster-6        2.2 1.16     1.04\n2  2008-03     ERC pollster-51        1.3 1.16     0.14\n3  2008-03     ERC  pollster-6        2.5 1.16     1.34\n4  2008-03     ERC pollster-53        1.9 1.16     0.74\n5  2008-03     ERC  pollster-6        2.7 1.16     1.54\n6  2008-03     ERC pollster-49        5.0 1.16     3.84\n7  2008-03     ERC pollster-57        8.0 1.16     6.84\n8  2008-03     ERC  pollster-6        2.4 1.16     1.24\n9  2008-03     ERC  pollster-6        2.3 1.16     1.14\n10 2008-03     ERC pollster-49        4.0 1.16     2.84\n11 2008-03     ERC pollster-18        1.9 1.16     0.74\n12 2008-03     ERC pollster-39        2.1 1.16     0.94"
+  },
+  {
+    "objectID": "index.html#question-7",
+    "href": "index.html#question-7",
+    "title": "Election Data",
+    "section": "Question 7:",
+    "text": "Question 7:\nIn which election were the polls most wrong?"
+  },
+  {
+    "objectID": "index.html#question-8",
+    "href": "index.html#question-8",
+    "title": "Election Data",
+    "section": "Question 8:",
+    "text": "Question 8:\nHow were the polls wrong in national parties (PSOE, PP, VOX, CS, MP, UP - IU)?"
+  },
+  {
+    "objectID": "index.html#question-9",
+    "href": "index.html#question-9",
+    "title": "Election Data",
+    "section": "Question 9:",
+    "text": "Question 9:\nWhich polling houses got it right the most and which ones deviated the most from the results?\n\nBESTWORSTBOTH"
+  },
+  {
+    "objectID": "index.html#elections-through-the-years",
+    "href": "index.html#elections-through-the-years",
+    "title": "Election Data",
+    "section": "Elections through the years:",
+    "text": "Elections through the years:"
+  },
+  {
+    "objectID": "index.html#representation-of-nº-of-votes-per-municipio",
+    "href": "index.html#representation-of-nº-of-votes-per-municipio",
+    "title": "Election Data",
+    "section": "Representation of nº of votes per municipio",
+    "text": "Representation of nº of votes per municipio\nFunction that allow us to plot easily the number of votes the different parties got in that municipality in the different elections.\nplot_municipio(“Madrid”) would plot us the results for Madrid.\n\nelection_data_tidymunicipio &lt;- inner_join(election_data_tidy, cod_mun, by = c(\"codigo_municipio\" = \"cod_mun\"))\n\nplot_municipio &lt;- function(obj_mun) {\n  ggplot(election_data_tidymunicipio |&gt; filter(municipio == obj_mun), \n         aes(x = acronyms, y = votes, fill = acronyms)) +\n    geom_bar(stat = \"identity\") +\n    facet_wrap(~Fecha, scale = \"fixed\") +\n    labs(title = paste(\"Nº of Votes in\", obj_mun),\n         x = \"Party\",\n         y = \"Number of Votes\") +\n    theme_stata() + \n    theme(legend.title = element_blank()) +\n    xlab(NULL) +\n    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +\n    scale_fill_manual(values = color_mapping) +\n    theme(legend.position = \"none\")\n}"
+  },
+  {
+    "objectID": "index.html#plot_municipioexamples",
+    "href": "index.html#plot_municipioexamples",
+    "title": "Election Data",
+    "section": "plot_municipio(“examples”):",
+    "text": "plot_municipio(“examples”):\n\nMadridSevillaZaragoza"
+  },
+  {
+    "objectID": "index.html#representation-of-nº-of-votes-per-municipio-using-the-code",
+    "href": "index.html#representation-of-nº-of-votes-per-municipio-using-the-code",
+    "title": "Election Data",
+    "section": "Representation of nº of votes per municipio using the code!",
+    "text": "Representation of nº of votes per municipio using the code!\n\nplot_code &lt;- function(cod_mun) {\n  ggplot(election_data_tidymunicipio |&gt; filter(codigo_municipio == cod_mun), \n         aes(x = acronyms, y = votes, fill = acronyms)) +\n    geom_bar(stat = \"identity\") +\n    facet_wrap(~Fecha, scale = \"fixed\") +\n    labs(title = paste(\"Nº of Votes in\", election_data_tidymunicipio %&gt;%\n    filter(codigo_municipio == cod_mun) %&gt;%\n    pull(municipio)),\n         x = \"Party\",\n         y = \"Number of Votes\") +\n    theme_stata() + \n    theme(legend.title = element_blank()) +\n    xlab(NULL) +\n    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +\n    scale_fill_manual(values = color_mapping) +\n    theme(legend.position = \"none\")\n}"
+  },
+  {
+    "objectID": "index.html#plot_codeexamples",
+    "href": "index.html#plot_codeexamples",
+    "title": "Election Data",
+    "section": "plot_code(“examples”):",
+    "text": "plot_code(“examples”):\n\n11-36-04810-06-03607-13-01504-07-05111-32-05805-35-026"
+  }
+]
