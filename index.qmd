@@ -1,0 +1,824 @@
+---
+title: "Election Data"
+format: 
+   revealjs: 
+       theme: serif
+editor: visual
+author: Bernard Banyuls
+---
+
+
+## TIDY DATA ELECTIONS!
+
+First step is to convert **election_data** into:
+
+**election_data_tidy!**
+
+For that matter we will use:
+
+::: {.incremental}
+- pivot_longer,
+- mutate,
+- glue,
+- case_when,
+- among others!
+:::
+
+## Code: {.smaller}
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(dplyr)
+library(glue)
+library(lubridate)
+library(dplyr)
+library(ggthemes)
+library(ggrepel)
+library(patchwork)
+library(wesanderson)
+
+election_data <- read_csv(file = "./data/datos_elecciones_brutos.csv")
+cod_mun <- read_csv(file = "./data/cod_mun.csv")
+surveys <- read_csv(file = "./data/historical_surveys.csv")
+abbrev <- read_csv(file = "./data/siglas.csv")
+```
+
+
+```{r, echo=TRUE}
+election_data_tidy <- election_data %>%
+  mutate(across(where(is.logical), as.numeric)) %>%
+  pivot_longer(cols = "BERDEAK-LOS VERDES":"COALICIÓN POR MELILLA",  
+               names_to = "Parties",
+               values_to = "Votes") %>%
+  drop_na() %>%
+  unite(col = Fecha, anno, mes, sep = "-") %>%
+  mutate(
+    codigo_municipio = glue("{codigo_ccaa}-{codigo_provincia}-{codigo_municipio}"),
+    acronyms = case_when(
+      str_detect(Parties, "PARTIDO.SOCIALISTA.OBRERO.ESPAÑOL|PARTIT.DELS.SOCIALISTES.DE.CATALUNYA|PARTIDO.SOCIALISTA.DE.EUSKADI|PARTIDO.DOS.SOCIALISTAS.DE.GALICIA") ~ "PSOE",
+      str_detect(Parties, "PARTIDO.POPULAR") ~ "PP",
+      str_detect(Parties, "PODEMOS|EN.COMÚ.PODEM|IZQUIERDA UNIDA|LOS VERDES|PODEM|EZKER BATUA") ~ "UP-IU",
+      str_detect(Parties, "VOX") ~ "VOX",
+      str_detect(Parties, "CIUDADANOS|CIUTADANS") ~ "CS",
+      str_detect(Parties, "ESQUERRA.REPUBLICANA.DE.CATALUNYA") ~ "ERC",
+      str_detect(Parties, "EUSKAL.HERRIA.BILDU|EUSKO ALKARTASUNA|ARALAR") ~ "BILDU",
+      str_detect(Parties, "PARTIDO.NACIONALISTA.VASCO") ~ "PNV",
+      str_detect(Parties, "BLOQUE NACIONALISTA GALLEGO") ~ "BNG",
+      str_detect(Parties, "COMPROMÍS") ~ "COMPROMIS",
+      str_detect(Parties, "CONVERGÈNCIA I UNIÓ|JUNTS PER CATALUNYA-JUNTS") ~ "CIU",
+      str_detect(Parties, "MÁS PAÍS") ~ "MP",
+      TRUE ~ "OTHERS"
+    )
+  ) %>%
+select(-tipo_eleccion, -vuelta, -codigo_distrito_electoral, -codigo_ccaa, -codigo_provincia) %>%
+group_by_at(vars(-Parties, -Votes)) %>%  
+  summarise(votes = sum(Votes), .groups = 'drop') %>%
+  ungroup() |> 
+mutate(turnout = ((votos_candidaturas + votos_nulos + votos_blancos) / censo) * 100)
+```
+
+## TIDY DATA SURVEYS!
+
+First step is to convert **surveys** into:
+
+**tidy surveys!**
+
+For that matter we will use:
+
+::: {.incremental}
+- pivot_longer,
+- lubridate
+- drop_na,
+- filter
+- among others!
+:::
+
+
+## Code: {.smaller}
+
+```{r, , echo=TRUE}
+surveys <- surveys |> select(-type_survey) |>   drop_na(date_elec)
+
+surveys$Year <- year(surveys$date_elec)
+
+surveys <- surveys |>  filter(Year >= 2008)
+
+surveys <- surveys |>  filter(exit_poll == FALSE)
+
+surveys <- surveys |> drop_na(size)
+
+surveys$fieldwork_days <- as.numeric(surveys$field_date_to - surveys$field_date_from)
+
+surveys <- surveys |>  filter(fieldwork_days >= 1)
+
+surveys <- surveys |>  filter(size >= 750)
+
+surveys <- surveys   |>  
+  pivot_longer(cols = "UCD":"EV",  
+               names_to = "Parties",
+               values_to = "Intentions") 
+
+surveys <- surveys |>  drop_na(turnout)
+
+surveys <- surveys |> drop_na(Intentions)
+```
+
+
+## Visualizations!
+                                        
+As we answer the questions through graphs in order to understand easier the results, we create a palette according to the acronym and the color that matches their logo as far as possible.
+                                                                                    
+```{r, echo= TRUE}
+
+acronyms <- c("PSOE", "PP", "UP-IU", "OTHERS", 
+              "ERC", "PNV", "BILDU", "CS", 
+              "CIU", "VOX", "COMPROMIS")
+colors <- c("#c81d11", "#3399FF", "#6D50B3", 
+            "#808080", "#ebc049", "#C89289", 
+            "#28c9bc", "#FF5824", "#020559", 
+            "#73B446", "#FF5824")
+
+color_mapping <- setNames(colors, acronyms)
+
+```
+                                                                                           
+
+Also, all graphs will follow the stata theme of ggplot2 to ensure visual consistency.
+
+
+## Question 1:
+
+How is the vote of national parties (PSOE, PP, VOX, CS, MP, UP - IU) distributed against regional or nationalist parties?
+
+
+```{r, echo = TRUE}
+election_data_tidy1 <- election_data_tidy |> 
+  mutate(
+    acronyms1 = case_when(
+      str_detect(acronyms, "PSOE|PP|VOX|CS|MP|UP-IU") ~ "National",
+      TRUE ~ "Regional/Nationalist"
+    )
+  ) |> select(-acronyms) |> 
+  group_by_at(vars(-votes)) |> 
+  summarise(votes = sum(votes), .groups = 'drop') |> 
+  ungroup()
+
+
+election_data_tidy1 <- election_data_tidy1 |> 
+  select(votes, acronyms1)
+
+```
+
+## Graph Question 1
+
+```{r, output= TRUE}
+ggplot(data = election_data_tidy1) +
+       aes(x = votes, fill = acronyms1) +
+  geom_histogram(alpha = 0.7, bins = 30) +
+  facet_wrap(~acronyms1, scales = "fixed") +
+  labs(title = "Distribution of Votes for National vs. Regional/Nationalist Parties",
+       x = "Nº of Votes",
+       y = "Frequency") +
+  scale_fill_manual(values = c("#009999", "deepskyblue2")) +
+  theme_stata() +
+  xlim(0, 9000)+ylim(0,12000) +
+  theme(legend.position = "none")
+```
+
+## Question 2: 
+
+Which party was the winner in the municipalities with more than 100,000 inhabitants (census) in each of the elections?
+
+```{r, echo = TRUE, results = 'hide'}
+election_data_tidy2 <- election_data_tidy %>%
+  filter(censo > 100000) |> 
+  group_by_at(vars(-acronyms, -votes)) |> 
+   slice_max(votes, n=1, with_ties = FALSE) |> 
+  ungroup()
+```
+
+## Graph Question 2
+
+```{r}
+
+ggplot(election_data_tidy2, aes(x = acronyms, fill = acronyms)) +
+  geom_bar() +
+  facet_wrap(~Fecha, scale= "fixed") +
+  labs(title = "Election Winners by Year (Census >100k)",
+       x = "Party",
+       y = "Number of Wins")+
+  theme_stata() + 
+  theme(legend.title=element_blank()) +
+  xlab(NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = color_mapping) +theme(legend.position="none")
+```
+
+## Question 3: {.smaller}
+
+
+Which party was the second when the first was the PSOE? And when the first was the PP?
+
+
+```{r, echo = TRUE}
+winner <- election_data_tidy   |> 
+  group_by_at(vars(-acronyms, -votes)) |> 
+  slice_max(votes, n=1, with_ties = FALSE) |> 
+  ungroup() |> rename("Winner"="acronyms","votes_winner"="votes")
+
+winner <- winner |> 
+  select(codigo_municipio, Fecha, Winner, votes_winner)
+
+losers <- election_data_tidy   |> 
+  group_by_at(vars(-acronyms, -votes)) |> 
+  slice_max(votes, n=2, with_ties = FALSE) |> 
+  slice_min(votes, n=1, with_ties = FALSE) |> 
+  ungroup() |> rename("Losser"="acronyms","votes_loser"="votes")
+
+losers <- losers |> 
+  select(codigo_municipio, Fecha, Losser, votes_loser)
+
+
+winnersandlosers <-winner |> left_join(losers,by=c("Fecha","codigo_municipio"))
+
+second_parties_when_psoe <- winnersandlosers |> filter(Winner=="PSOE")
+
+second_parties_when_pp <- winnersandlosers |> filter(Winner=="PP")
+```
+
+## Function to plot the graphs!
+
+```{r, echo = TRUE}
+plot_histogram <- function(data, party_name) {
+  ggplot(data, aes(x = Losser, fill = Losser)) +
+    geom_bar(stat = "count") +
+  geom_text(stat = "count", aes(label = 
+          ifelse(after_stat(count) < 1000, 
+                 after_stat(count), "")),
+            vjust = -0.5, size = 3) +
+  facet_wrap(~Fecha) +
+    labs(title = paste("Second winners when", party_name, "won"),
+         x = "Party",
+         y = "Nº of times won") +
+    theme_stata()+theme(legend.position="none") +
+  theme(legend.title=element_blank()) + 
+  xlab(NULL) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = color_mapping) 
+}
+```
+
+## Question 3 graphs:  {.smaller}
+::: {.panel-tabset}
+
+## PSOE
+```{r}
+plot_histogram(second_parties_when_psoe, "PSOE")
+```
+
+
+## PP
+
+```{r}
+plot_histogram(second_parties_when_pp, "PP")
+```
+
+
+:::
+
+
+## Question 4: {.smaller}
+
+Who benefits from low turnout?
+
+:::: {.columns}
+
+::: {.column width="50%"}
+```{r, echo=TRUE}
+election_data_tidy4 <- election_data_tidy |> 
+  mutate( pcg_votes = (votes / 
+                      (votos_candidaturas + 
+                         votos_nulos + 
+                         votos_blancos)) * 100)
+
+question4 <- election_data_tidy4 |> 
+    group_by(acronyms)  |> 
+  summarize(mean_pcgvotes = mean(pcg_votes),
+            mean_turnout = mean(turnout))
+
+sorted_question4 <- question4  |> 
+  arrange(mean_turnout)
+
+sorted_question4 
+```
+
+:::
+
+::: {.column width="50%"}
+
+```{r, echo=TRUE}
+mean_turnout <- election_data_tidy |>
+  group_by(Fecha, codigo_municipio) |>
+  summarise(mean_turnout = mean(turnout)
+  , .groups = 'drop') 
+
+mean_turnout
+```
+
+:::
+
+::::
+
+## Graph Question 4:
+
+```{r}
+ggplot(sorted_question4, aes(x = mean_turnout, y = mean_pcgvotes, label = acronyms, color = acronyms)) +
+  geom_point(size=1.5) +
+  geom_text_repel(nudge_x = 0.05) +
+  geom_vline(xintercept = 75, linetype = "dashed", color = "black") +
+  labs(x = "Average Turnout", y = "Percentage of Votes", title = "Party Performance vs. Turnout") +
+  theme_stata() + theme(legend.title=element_blank()) +theme(legend.position="none") +
+  scale_color_manual(values = color_mapping)
+```
+
+## Question 5:
+
+How to analyze the relationship between census and vote? Is it true that certain parties win in rural areas?
+
+```{r, echo=TRUE}
+ruralquestion5 <- election_data_tidy %>%
+  mutate(zone_type = case_when(
+    censo <= 5000 ~ "Zona Rural de pequeño tamaño",
+    censo > 5000 & censo <= 30000 ~ "Zona Rural",
+    censo > 30000 & censo <= 50000 ~ "Pequeñas áreas urbanas",
+    censo > 50000 ~ "Grandes Áreas Urbanas"
+  ))
+
+
+ruralquestion5part1 <- ruralquestion5 |> 
+    group_by_at(vars(-acronyms, -votes)) |> 
+   slice_max(votes, n=1, with_ties = FALSE) |> 
+  ungroup()
+
+
+```
+
+## Question 5 graphs:  {.smaller}
+::: {.panel-tabset}
+
+## GAU
+```{r}
+ruralquestion5part1gau <- ruralquestion5part1 |> 
+  filter(zone_type == "Grandes Áreas Urbanas")
+
+
+gau <- ggplot(ruralquestion5part1gau, aes(x = acronyms, fill = acronyms)) +
+  geom_bar(aes(y = (..count..)/sum(..count..))) +  # Use position_fill() to scale bars as a ratio
+  labs(title = "Grandes Áreas Urbanas",
+       y = "Proportion of Wins") +
+  theme_stata() +
+  theme(legend.position = "none") + xlab(NULL)+
+  scale_y_continuous(limits = c(0, 0.6))  + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = paste0(round((..count..)/sum(..count..), 4) * 100, "%"), y = ((..count..)/sum(..count..))),
+            stat = "count", vjust = -0.5, size = 3) +
+  scale_fill_manual(values = color_mapping)
+
+gau
+```
+
+
+## ZR
+
+```{r}
+ruralquestion5part1zr <- ruralquestion5part1 |> 
+  filter(zone_type == "Zona Rural")
+
+
+zr <- ggplot(ruralquestion5part1zr, aes(x = acronyms, fill = acronyms)) +
+  geom_bar(aes(y = (..count..)/sum(..count..))) +  # Use position_fill() to scale bars as a ratio
+  labs(title = "Zona Rural",
+       y = "Proportion of Wins") +
+  theme_stata() +
+  theme(legend.position = "none")  + xlab(NULL)+
+  scale_y_continuous(limits = c(0, 0.6))  + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = paste0(round((..count..)/sum(..count..), 4) * 100, "%"), y = ((..count..)/sum(..count..))),
+            stat = "count", vjust = -0.5, size = 3) +
+  scale_fill_manual(values = color_mapping)
+
+zr
+```
+
+## ZRPT
+
+```{r}
+ruralquestion5part1zrpt <- ruralquestion5part1 |> 
+  filter(zone_type == "Zona Rural de pequeño tamaño")
+
+
+zrpt <- ggplot(ruralquestion5part1zrpt, aes(x = acronyms, fill = acronyms)) +
+  geom_bar(aes(y = (..count..)/sum(..count..))) +  # Use position_fill() to scale bars as a ratio
+  labs(title = "Zona Rural de pequeño tamaño",
+       y = "Proportion of Wins") +
+  theme_stata() +
+  theme(legend.position = "none") + xlab(NULL)+
+  scale_y_continuous(limits = c(0, 0.6))  + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = paste0(round((..count..)/sum(..count..), 4) * 100, "%"), y = ((..count..)/sum(..count..))),
+            stat = "count", vjust = -0.5, size = 3) +
+  scale_fill_manual(values = color_mapping)
+
+zrpt
+```
+
+
+## PAU
+
+```{r}
+ruralquestion5part1pau <- ruralquestion5part1 |> 
+  filter(zone_type == "Pequeñas áreas urbanas") 
+
+
+pau <- ggplot(ruralquestion5part1pau, aes(x = acronyms, fill = acronyms)) +
+  geom_bar(aes(y = (..count..)/sum(..count..))) +  # Use position_fill() to scale bars as a ratio
+  labs(title = "Pequeñas áreas urbanas",
+       y = "Proportion of Wins") +
+  theme_stata() +
+  theme(legend.position = "none")  + xlab(NULL)  +
+  scale_y_continuous(limits = c(0, 0.6)) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = paste0(round((..count..)/sum(..count..), 4) * 100, "%"), y = ((..count..)/sum(..count..))),
+            stat = "count", vjust = -0.5, size = 3) +
+  scale_fill_manual(values = color_mapping)
+
+pau
+```
+
+:::
+
+
+## Question 6:  {.smaller}
+
+How to calibrate the error of the polls (remember that the polls are voting intentions at national level)?
+
+```{r, echo = TRUE}
+surveys <- surveys %>%
+  mutate(date_elec = format(ymd(date_elec), "%Y-%m"))
+
+survey_actual1 <- election_data_tidy |> 
+  group_by(Fecha) %>%  
+  summarise(total_votes = sum(votes), .groups = 'drop')
+
+survey_actual2 <- election_data_tidy |> 
+  group_by(Fecha, acronyms) %>%  
+  summarise(votes = sum(votes), .groups = 'drop')
+
+merged_surveyactual <- merge(survey_actual1, survey_actual2, 
+                             by = "Fecha", all = TRUE)
+
+merged_surveyactual <- merged_surveyactual %>%
+  mutate(pcg = round((votes/total_votes) * 100, 2))
+
+head(merged_surveyactual)
+```
+
+
+```{r, echo = FALSE}
+surveys <- surveys |> 
+  mutate(
+    Parties = case_when(
+      str_detect(Parties, "PSOE") ~ "PSOE",
+      str_detect(Parties, "BILDU") ~ "BILDU",
+      str_detect(Parties, "ERC") ~ "ERC",
+      str_detect(Parties, "PNV") ~ "PNV",
+      str_detect(Parties, "PP") ~ "PP",
+      str_detect(Parties, "UP") ~ "UP-IU",
+      str_detect(Parties, "IU") ~ "UP-IU",
+      str_detect(Parties, "CIU") ~ "CIU",
+      str_detect(Parties, "JXCAT-JUNTS") ~ "CIU",
+      str_detect(Parties, "COMPROMIS") ~ "COMPROMIS",
+      str_detect(Parties, "VOX") ~ "VOX",
+      str_detect(Parties, "MP") ~ "MP",
+      str_detect(Parties, "CS") ~ "CS",
+      str_detect(Parties, "PDECAT") ~ "CIU",
+      str_detect(Parties, "PODEMOS") ~ "UP-IU",
+      str_detect(Parties, "DIL-CDC") ~ "CIU",
+      TRUE ~ "OTHERS"))
+```
+
+## Question 6: {.smaller}
+
+```{r, echo = TRUE}
+
+merged_surveyactualpcg <- merged_surveyactual |> 
+  select(Fecha, acronyms, pcg) |> 
+  rename(Parties = acronyms)
+
+surveys <- surveys |> 
+  rename(Fecha = date_elec)
+
+merged_df <- merge(surveys, merged_surveyactualpcg, by = c('Fecha', 'Parties'))
+
+merged_df <- merged_df |> 
+  mutate(diff = pcg - Intentions,
+         abs_diff = abs(diff))
+
+merged_dfactualpresentation <- merged_df |> 
+  select(Fecha, Parties, id_pollster, Intentions, pcg, abs_diff)
+
+head(merged_dfactualpresentation, 12)
+```
+
+## Question 7: 
+
+In which election were the polls most wrong?
+
+```{r}
+question7 <- merged_df  |> 
+  group_by(Fecha) |> 
+    summarise(error = mean(abs_diff), .groups = 'drop')
+
+ggplot(question7, aes(x = Fecha, y = error, fill = Fecha)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(error, 2)), vjust = -0.5, size = 4) +
+  labs(title = "Error Over Time",
+       y = "Error (Absolute Diff) in Percentage Points") +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        panel.grid = element_blank()) +
+  scale_y_discrete(labels = NULL) + theme_stata() + 
+  theme(legend.position = "none")  +scale_fill_manual(values=wes_palette(n=6, name="AsteroidCity2")) +xlab(NULL)
+```
+
+
+## Question 8:
+
+How were the polls wrong in national parties (PSOE, PP, VOX, CS, MP, UP - IU)?
+
+
+```{r}
+
+question8 <- merged_df  |> 
+  group_by(Fecha, Parties) |> 
+    summarise(error = mean(abs_diff), .groups = 'drop')
+
+
+
+question8 <- question8 %>%
+  filter(Parties %in% c("PSOE", "PP", "VOX", "CS", "MP", "UP-IU"))
+
+
+Parties <- c("PSOE", "PP", "UP-IU", "OTHERS", "ERC", "PNV", "BILDU", "CS", "CIU", "VOX", "COMPROMIS")
+colors <- c("#c81d11", "#3399FF", "#6D50B3", 
+            "#808080", "#ebc049", "#C89289", 
+            "#28c9bc", "#FF5824", "#020559", 
+            "#73B446", "#FF5824")
+
+color_mappingsurvey <- setNames(colors, Parties)
+
+
+ggplot(question8, aes(x = Parties, y = error, fill = Parties)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~Fecha, scale = "free") +
+  geom_text(aes(label = round(error, 2)), vjust = -0.5, size = 3) +
+  labs(title = "Error Over Time",
+       y = "Error (Absolute Diff) in Percentage Points") +
+  theme_stata() +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        panel.grid = element_blank()) +
+  scale_y_discrete(labels = NULL, expand = c(0.1, 0.1)) +
+  scale_fill_manual(values = color_mappingsurvey) +
+  theme(axis.title.y = element_text(margin = margin(r = 10)))
+```
+
+
+## Question 9: {.smaller}
+
+
+Which polling houses got it right the most and which ones deviated the most from the results?
+
+```{r, echo = FALSE}
+question9 <- merged_df  |> 
+  group_by(id_pollster, pollster) |> 
+    summarise(error = mean(abs_diff), .groups = 'drop')
+
+
+question9_5best <- question9|> arrange(error) |>  head(5)
+
+question9_5worst <- question9|> arrange(desc(error))|> head(5)
+```
+
+::: {.panel-tabset}
+
+## BEST 
+
+```{r}
+ggplot(question9_5best, aes(x = pollster, y = error, fill = pollster)) +
+  geom_bar(stat = "identity")  +
+  geom_text(aes(label = round(error, 2)), vjust = -0.5, size = 3) +
+  labs(title = "Error per Pollster",
+       y = "Error (Absolute Diff) in Percentage Points") +
+  theme_stata() +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        panel.grid = element_blank()) +
+  scale_y_discrete(labels = NULL, expand = c(0.1, 0.1)) +scale_fill_manual(values=wes_palette(n=5, name="FantasticFox1")) +
+  theme(axis.title.y = element_text(margin = margin(r = 10)))
+```
+
+## WORST
+
+```{r}
+ggplot(question9_5worst, aes(x = pollster, y = error, fill = pollster)) +
+  geom_bar(stat = "identity")  +
+  geom_text(aes(label = round(error, 2)), vjust = -0.5, size = 3) +
+  labs(title = "Error per Pollster",
+       y = "Error (Absolute Diff) in Percentage Points") +
+  theme_stata() +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        panel.grid = element_blank()) +
+  scale_y_discrete(labels = NULL, expand = c(0.1, 0.1)) +scale_fill_manual(values=wes_palette(n=5, name="AsteroidCity1")) +
+  theme(axis.title.y = element_text(margin = margin(r = 10)))
+```
+
+## BOTH
+```{r}
+combined_df <- rbind(question9_5best, question9_5worst)
+combined_df$pollster <- factor(combined_df$pollster, levels = combined_df$pollster[order(combined_df$error)])
+
+ggplot(combined_df, aes(x = pollster, y = error, fill = pollster)) +
+  geom_bar(stat = "identity")  +
+  geom_text(aes(label = round(error, 2)), vjust = -0.5, size = 3) +
+  labs(title = "Error per Pollster",
+       y = "Error (Absolute Diff) in Percentage Points") +
+  theme_stata()+
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_discrete(labels = NULL, expand = c(0.1, 0.1))  +
+  scale_fill_brewer(palette="Spectral") +
+  theme(axis.title.y = element_text(margin = margin(r = 10)))
+
+```
+
+
+:::
+
+
+## Elections through the years:
+
+
+```{r}
+merged_surveyactualpcg <- merged_surveyactual |> 
+  select(Fecha, acronyms, pcg) |> 
+  rename(Parties = acronyms)
+
+
+merged_surveyactualpcg$Fecha <- as.Date(paste(merged_surveyactualpcg$Fecha, "-01", sep = ""), format = "%Y-%m-%d")
+
+
+
+merged_surveyactualpcg <- merged_surveyactualpcg %>%
+  filter(Parties %in% c("PP", "PSOE", "VOX", "UP-IU", "OTHERS", "CS", "CIU", "PNV"))
+
+final_points <- merged_surveyactualpcg[merged_surveyactualpcg$Fecha == "2019-11-01", ]
+
+
+
+ggplot(merged_surveyactualpcg, aes(x = Fecha, y = pcg, color = Parties)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "",
+       y = "Percentage of Total Votes (%)") +
+  theme_stata() +
+  scale_color_manual(values = color_mapping) + theme(legend.position = "none") + geom_text_repel(
+  data = final_points,
+  aes(label = Parties),
+  box.padding = 0.5,
+  point.padding = 0.5,
+  segment.color = "transparent",
+  segment.size = 0,
+  nudge_x = 1,
+  nudge_y = 1,
+) + xlab(NULL) 
+```
+
+
+## Representation of nº of votes per municipio {.smaller}
+
+Function that allow us to plot easily the number of votes the different parties got in that municipality in the different elections.
+
+plot_municipio("Madrid") would plot us the results for Madrid.
+
+```{r, echo = TRUE}
+election_data_tidymunicipio <- inner_join(election_data_tidy, cod_mun, by = c("codigo_municipio" = "cod_mun"))
+
+plot_municipio <- function(obj_mun) {
+  ggplot(election_data_tidymunicipio |> filter(municipio == obj_mun), 
+         aes(x = acronyms, y = votes, fill = acronyms)) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~Fecha, scale = "fixed") +
+    labs(title = paste("Nº of Votes in", obj_mun),
+         x = "Party",
+         y = "Number of Votes") +
+    theme_stata() + 
+    theme(legend.title = element_blank()) +
+    xlab(NULL) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_manual(values = color_mapping) +
+    theme(legend.position = "none")
+}
+```
+
+
+## plot_municipio("examples"):  {.smaller}
+::: {.panel-tabset}
+
+## Madrid
+```{r}
+plot_municipio("Madrid")
+```
+
+
+## Sevilla
+
+```{r}
+plot_municipio("Sevilla")
+```
+
+## Zaragoza
+
+```{r}
+plot_municipio("Zaragoza")
+```
+
+:::
+
+
+## Representation of nº of votes per municipio using the code! {.smaller}
+```{r, echo = TRUE}
+
+plot_code <- function(cod_mun) {
+  ggplot(election_data_tidymunicipio |> filter(codigo_municipio == cod_mun), 
+         aes(x = acronyms, y = votes, fill = acronyms)) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~Fecha, scale = "fixed") +
+    labs(title = paste("Nº of Votes in", election_data_tidymunicipio %>%
+    filter(codigo_municipio == cod_mun) %>%
+    pull(municipio)),
+         x = "Party",
+         y = "Number of Votes") +
+    theme_stata() + 
+    theme(legend.title = element_blank()) +
+    xlab(NULL) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_manual(values = color_mapping) +
+    theme(legend.position = "none")
+}
+```
+
+
+
+## plot_code("examples"):  {.smaller}
+::: {.panel-tabset}
+
+## 11-36-048
+```{r}
+plot_code('11-36-048')
+```
+
+
+## 10-06-036
+
+```{r}
+plot_code('10-06-036')
+```
+
+## 07-13-015
+
+```{r}
+plot_code('07-13-015')
+```
+
+## 04-07-051
+```{r}
+plot_code('04-07-051')
+```
+
+
+## 11-32-058
+
+```{r}
+plot_code('11-32-058')
+```
+
+## 05-35-026
+
+```{r}
+plot_code("05-35-026")
+```
+
+:::
+
+
